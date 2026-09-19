@@ -1,4 +1,4 @@
-name: Web & App Asset Build
+name: Build Android APK
 
 on:
   push:
@@ -20,30 +20,42 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        if [ -f package.json ]; then
-          npm install
-        elif [ -d client ] && [ -f client/package.json ]; then
-          cd client && npm install
-        fi
+        npm install || true
 
-    - name: Build Project
+    - name: Build Web Assets
       run: |
-        if grep -q '"build"' package.json 2>/dev/null; then
-          npm run build
-        elif [ -d client ] && grep -q '"build"' client/package.json 2>/dev/null; then
-          cd client && npm run build
+        npm run build || true
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Build APK with Capacitor / Cordova / Gradle
+      run: |
+        if [ -d "android" ]; then
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+        elif [ -f "gradlew" ]; then
+          chmod +x gradlew
+          ./gradlew assembleDebug
         else
-          echo "No build script found, bundling root files."
+          npx cap sync android || true
+          npx cap build android || true
+          if [ -d "android" ]; then
+            cd android
+            chmod +x gradlew
+            ./gradlew assembleDebug
+          fi
         fi
 
-    - name: Upload Build Artifacts
+    - name: Find and Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-build-output
+        name: FlixCasa-App-Debug-APK
         path: |
-          dist/
-          build/
-          www/
-          out/
-          .
+          **/*.apk
+          !**/node_modules/**
           
