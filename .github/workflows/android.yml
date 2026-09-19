@@ -1,4 +1,4 @@
-name: Auto Build Android APK
+name: Universal Auto Build APK
 
 on:
   push:
@@ -18,17 +18,25 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Install Dependencies
+    - name: Locate Project Root & Install
       run: |
-        npm install
-        npm install @capacitor/core @capacitor/cli @capacitor/android
+        TARGET_DIR="."
+        if [ ! -f "package.json" ]; then
+          TARGET_DIR=$(dirname $(find . -maxdepth 2 -name "package.json" | head -n 1))
+        fi
+        echo "PROJECT_DIR=$TARGET_DIR" >> $GITHUB_ENV
+        echo "Building inside directory: $TARGET_DIR"
+        cd $TARGET_DIR
+        npm install || true
 
     - name: Build Web Assets
       run: |
+        cd ${{ env.PROJECT_DIR }}
         npm run build || (mkdir -p dist && cp index.html dist/ 2>/dev/null) || true
 
-    - name: Auto Generate Android Folder
+    - name: Auto Generate Android Platform
       run: |
+        cd ${{ env.PROJECT_DIR }}
         npx cap init "FlixCasa" "com.flixcasa.app" --web-dir dist || true
         npx cap add android || true
         npx cap sync android || true
@@ -41,13 +49,21 @@ jobs:
 
     - name: Build Debug APK
       run: |
-        cd android
-        chmod +x gradlew
-        ./gradlew assembleDebug
+        ANDROID_DIR=$(find . -maxdepth 3 -name "gradlew" | head -n 1 | xargs dirname)
+        if [ -n "$ANDROID_DIR" ]; then
+          cd $ANDROID_DIR
+          chmod +x gradlew
+          ./gradlew assembleDebug
+        else
+          echo "Error: Gradle wrapper not found."
+          exit 1
+        fi
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: FlixCasa-App-Debug-APK
-        path: android/app/build/outputs/apk/debug/app-debug.apk
-        
+        path: |
+          **/*.apk
+          !**/node_modules/**
+          
