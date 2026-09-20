@@ -18,20 +18,35 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Install Dependencies
+    - name: Locate Project & Install Dependencies
       run: |
+        # Find where package.json lives
+        if [ -f "package.json" ]; then
+          PROJ_DIR="."
+        else
+          PROJ_DIR=$(dirname $(find . -maxdepth 3 -name "package.json" | head -n 1))
+        fi
+        echo "PROJ_DIR=$PROJ_DIR" >> $GITHUB_ENV
+        cd $PROJ_DIR
         npm install --yes || true
         npm install @capacitor/core @capacitor/cli @capacitor/android --yes || true
 
+    - name: Build Web Application
+      run: |
+        cd ${{ env.PROJ_DIR }}
+        npm run build || true
+
     - name: Generate Android Platform
       run: |
-        mkdir -p www
-        if [ -f "index.html" ]; then
-          cp index.html www/
-        else
-          echo "<html><body><h1>FlixCasa App</h1></body></html>" > www/index.html
-        fi
-        npx cap init "FlixCasa" "com.flixcasa.app" --web-dir www || true
+        cd ${{ env.PROJ_DIR }}
+        
+        # Find dist or build folder
+        WEB_DIR="dist"
+        if [ -d "build" ]; then WEB_DIR="build"; fi
+        if [ -d "out" ]; then WEB_DIR="out"; fi
+        if [ -d "public" ] && [ ! -d "dist" ]; then WEB_DIR="public"; fi
+        
+        npx cap init "FlixCasa" "com.flixcasa.app" --web-dir $WEB_DIR || true
         npx cap add android || true
         npx cap sync android || true
 
@@ -43,7 +58,8 @@ jobs:
 
     - name: Fix Kotlin Duplicate Class Conflict
       run: |
-        if [ -f "android/build.gradle" ]; then
+        BUILD_GRADLE=$(find . -name "build.gradle" | grep "android/build.gradle" | head -n 1)
+        if [ -f "$BUILD_GRADLE" ]; then
           echo '
           allprojects {
               configurations.all {
@@ -52,13 +68,15 @@ jobs:
                       exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
                   }
               }
-          }' >> android/build.gradle
+          }' >> $BUILD_GRADLE
         fi
 
     - name: Build Debug APK
       run: |
-        if [ -d "android" ]; then
-          cd android
+        GRADLEW_PATH=$(find . -name "gradlew" | head -n 1)
+        if [ -n "$GRADLEW_PATH" ]; then
+          GRADLE_DIR=$(dirname $GRADLEW_PATH)
+          cd $GRADLE_DIR
           chmod +x gradlew
           ./gradlew assembleDebug
         fi
@@ -67,5 +85,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: FlixCasa-App-Debug-APK
-        path: android/app/build/outputs/apk/debug/app-debug.apk
-        
+        path: |
+          **/app/build/outputs/apk/debug/app-debug.apk
+          
